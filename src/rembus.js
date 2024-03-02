@@ -31,6 +31,7 @@ export function bus(url, secret) {
     return new Component(url, secret);
 }
 
+
 export class RembusError {
     constructor(status, reason) {
         this.status = status
@@ -102,7 +103,7 @@ class Component {
         };
 
         this.socket.onclose = function close(event) {
-            console.log('connection closed, code:', event.code)
+            // console.log('connection closed, code:', event.code)
         };
 
         this.socket.onerror = (event) => this.reason = event.message

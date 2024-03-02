@@ -1,23 +1,24 @@
-## Rembus for javascript
+# Rembus for javascript
 
-### RPC server
+## RPC server
+
 ```js
-rembus = require('rembus');
+import rem from 'rembus';
 
 function myservice(x,y) {
     return x + y;
 }
 
-rb = rembus.component();
-rb.expose("myservice", myservice)
+rb = rem.bus();
+await rb.expose("myservice", myservice)
 ```
 
-### RPC client
-```js
-rembus = require('rembus');
+## RPC client
 
-rb = rembus.component()
+```js
+import rem from 'rembus';
+
+rb = rem.bus()
 let result = await rb.rpc("myservice", 1, 2)
 
 ```
-
