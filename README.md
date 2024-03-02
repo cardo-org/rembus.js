@@ -9,8 +9,11 @@ function myservice(x,y) {
     return x + y;
 }
 
-rb = rem.bus();
-await rb.expose("myservice", myservice)
+// Get rembus component that connect via plain websocket on port 8000 
+let rb = rem.bus('ws://localhost:8000');
+
+// Make myservice available to remote client components
+await rb.expose(myservice)
 ```
 
 ## RPC client
@@ -18,7 +21,12 @@ await rb.expose("myservice", myservice)
 ```js
 import rem from 'rembus';
 
-rb = rem.bus()
+// Default url is ws://localhost:8000
+let rb = rem.bus()
+
+// Invoke remote service
 let result = await rb.rpc("myservice", 1, 2)
 
+// Terminate connection
+await rb.close()
 ```
