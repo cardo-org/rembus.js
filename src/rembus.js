@@ -1,6 +1,7 @@
-import { encode, decode } from 'cbor-x';
+import { encode, decode, Encoder, Tag } from 'cbor-x';
 import { parse, stringify, v4 } from 'uuid';
 import WebSocket from 'isomorphic-ws';
+import { tableFromIPC, tableToIPC, Table } from 'apache-arrow';
 
 const isBrowser = typeof window !== "undefined" && typeof window.document !== "undefined";
 
@@ -27,10 +28,9 @@ const stsTargetNotFound = 0x2D;
 const stsTargetDown = 0x2E;
 const stsTimeout = 0x46
 
-export function bus(url, secret) {
+export function component(url, secret) {
     return new Component(url, secret);
 }
-
 
 export class RembusError {
     constructor(status, reason) {
@@ -68,6 +68,37 @@ function sign(challenge, secret) {
     return crypto.subtle.digest("SHA-256", plain)
 }
 
+export function tag2table(data) {
+    if (data instanceof Array) {
+        for (let i = 0; i < data.length; i++) {
+            if (data[i] instanceof Tag && data[i].tag == 80) {
+                data[i] = tableFromIPC(data[i].value)
+            }
+        }
+
+    } else if (data instanceof Tag && data.tag == 80) {
+        return tableFromIPC(data.value)
+    };
+    return data;
+}
+
+export function table2tag(data) {
+    if (data instanceof Array) {
+        let retvalue = []
+        for (let i = 0; i < data.length; i++) {
+            if (data[i] instanceof Table) {
+                retvalue[i] = new Tag(tableToIPC(data[i]), 80)
+            } else {
+                retvalue[i] = data[i]
+            }
+        }
+        return retvalue;
+    } else if (data instanceof Table) {
+        return new Tag(tableToIPC(data), 80)
+    }
+    return data
+}
+
 class Component {
     constructor(url = null, secret) {
         if (URL.canParse(url)) {
@@ -75,7 +106,8 @@ class Component {
             let protocol = uri.protocol.slice(0, -1)
             if (['ws', 'wss'].includes(protocol)) {
                 this.protocol = protocol
-                this.cid = uri.pathname.slice(1)
+                let cid = uri.pathname.slice(1)
+                this.cid = (cid.trim() == '') ? null : cid
                 this.host = uri.hostname
                 this.port = uri.port
             } else {
@@ -90,6 +122,7 @@ class Component {
         this.secret = secret
         this.handlers = new Map()
         this.reqres = {}
+        this.encoder = new Encoder({ tagUint8Array: false })
     }
 
     get url() {
@@ -169,11 +202,63 @@ class Component {
         }
     }
 
+    async handleInput(evt) {
+        if (isBrowser) {
+            var buff = await evt.data.arrayBuffer();
+            var bufView = new Uint8Array(buff);
+        } else {
+            var bufView = new Uint8Array(evt.data);
+        }
+        //console.log('input<<:', arrayToHex(bufView));
+        let payload = decode(bufView)
+        //console.log('rembus msg: ', payload);
+        let topic
+        switch (payload[0]) {
+            case TYPE_PUBSUB:
+                topic = payload[1]
+                if (this.handlers.has(topic)) {
+                    if (this.context === undefined) {
+                        //console.log(`recv [${topic}] pubsub`)
+                        this.handlers.get(topic)(tag2table(...payload[2]))
+                    } else {
+                        this.handlers.get(topic)(this.context, tag2table(...payload[2]))
+                    }
+                }
+                break;
+            case TYPE_RESPONSE:
+                var msgid = stringify(payload[1]);
+                if (this.reqres.hasOwnProperty(msgid)) {
+                    var status = payload[2];
+                    var handle = this.reqres[msgid]
+                    delete this.reqres[msgid];
+                    clearTimeout(handle.timer)
+                    handle.response(payload);
+                }
+                break;
+            case TYPE_RPC:
+                topic = payload[2];
+                //console.log(`[${topic}]: ${payload[4]}`)
+                if (this.handlers.has(topic)) {
+                    let result
+                    if (this.context === undefined) {
+                        result = this.handlers.get(topic)(...tag2table(payload[4]));
+                    } else {
+                        result = this.handlers.get(topic)(this.context, ...tag2table(payload[4]));
+                    }
+                    await this.response(new Uint8Array(payload[1]), result);
+                } else {
+
+                }
+                break;
+        }
+    }
+
+
     waitForResponse(id) {
         const completer = new Completer();
         function responseSettler(message) {
             let status = message[2]
-            let data = message[3]
+            let data = tag2table(message[3])
             switch (status) {
                 case stsSuccess:
                     completer.complete(data);
@@ -201,18 +286,22 @@ class Component {
         this.socket.send(pkt)
     }
 
+    shared(context) {
+        this.context = context
+    }
+
     async rpc(topic) {
         const args = Array.prototype.slice.call(arguments, 1);
         let msgid = v4();
-        let pkt = encode([TYPE_RPC, parse(msgid).buffer, topic, args]);
+        let pkt = this.encoder.encode([TYPE_RPC, parse(msgid).buffer, topic, null, table2tag(args)]);
         await this.send(pkt);
         return this.waitForResponse(msgid);
     }
 
     async publish(topic) {
         const args = Array.prototype.slice.call(arguments, 1);
-        let pkt = encode([TYPE_PUBSUB, topic, args]);
-        await this.send(pkt);
+        let pkt = encode([TYPE_PUBSUB, topic, table2tag(args)]);
+        this.send(pkt);
     }
 
     async identity() {
@@ -231,63 +320,29 @@ class Component {
         return this.waitForResponse(msgid);
     }
 
-    async handleInput(evt) {
-        if (isBrowser) {
-            var buff = await evt.data.arrayBuffer();
-            var bufView = new Uint8Array(buff);
-        } else {
-            var bufView = new Uint8Array(evt.data);
-        }
-        //console.log('input<<:', arrayToHex(bufView));
-        let payload = decode(bufView)
-        //console.log('rembus msg: ', payload);
-        let topic
-        switch (payload[0]) {
-            case TYPE_PUBSUB:
-                topic = payload[1]
-                if (this.handlers.has(topic)) {
-                    //console.log(`recv [${topic}] pubsub`)
-                    this.handlers.get(topic)(...payload[2])
-                }
-                break;
-            case TYPE_RESPONSE:
-                var msgid = stringify(payload[1]);
-                if (this.reqres.hasOwnProperty(msgid)) {
-                    var status = payload[2];
-                    var handle = this.reqres[msgid]
-                    delete this.reqres[msgid];
-                    clearTimeout(handle.timer)
-                    handle.response(payload);
-                }
-                break;
-            case TYPE_RPC:
-                topic = payload[2];
-                //console.log(`[${topic}]: ${payload[4]}`)
-                if (this.handlers.has(topic)) {
-                    let result = this.handlers.get(topic)(...payload[4]);
-                    await this.response(new Uint8Array(payload[1]), result);
-                } else {
-
-                }
-                break;
-        }
-    }
-
     async response(msgid, result) {
         let pkt = encode([TYPE_RESPONSE, msgid.buffer, stsSuccess, result]);
+        this.send(pkt);
+    }
+
+    async setreactive(sts) {
+        let msgid = v4();
+        let pkt = encode([TYPE_SETTING, parse(msgid).buffer, '__config__', { cmd: 'reactive', status: sts }]);
         await this.send(pkt);
+        return this.waitForResponse(msgid);
     }
 
     async reactive() {
-        let msgid = v4();
-        let pkt = encode([TYPE_SETTING, parse(msgid).buffer, '__config__', { cmd: 'reactive', status: true }]);
-        await this.send(pkt);
-        await this.waitForResponse(msgid);
+        return this.setreactive(true)
+    }
+
+    async unreactive() {
+        return this.setreactive(false)
     }
 
     async subscribe(fn) {
         let msgid = v4();
-        let pkt = encode([TYPE_SETTING, parse(msgid).buffer, fn.name, { cmd: 'add_interest' }]);
+        let pkt = encode([TYPE_SETTING, parse(msgid).buffer, fn.name, { cmd: 'subscribe' }]);
         await this.send(pkt);
         await this.waitForResponse(msgid);
         this.handlers.set(fn.name, fn)
@@ -295,14 +350,20 @@ class Component {
 
     async expose(fn) {
         let msgid = v4();
-        let pkt = encode([TYPE_SETTING, parse(msgid).buffer, fn.name, { cmd: 'add_impl' }]);
+        let pkt = encode([TYPE_SETTING, parse(msgid).buffer, fn.name, { cmd: 'expose' }]);
         await this.send(pkt);
         await this.waitForResponse(msgid);
         this.handlers.set(fn.name, fn)
     }
 
     async unsubscribe(topic) {
-        this.handlers.delete((topic.name === undefined) ? topic : topic.name)
+        let fname = (topic.name === undefined) ? topic : topic.name;
+        let msgid = v4();
+        let pkt = encode([TYPE_SETTING, parse(msgid).buffer, fname, { cmd: 'unsubscribe' }]);
+        await this.send(pkt);
+        await this.waitForResponse(msgid);
+        this.handlers.delete(fname)
     }
+
 }
 

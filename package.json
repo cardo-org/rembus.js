@@ -5,9 +5,10 @@
   "main": "dist/rembus.cjs.js",
   "module": "dist/rembus.esm.js",
   "dependencies": {
+    "apache-arrow": "^16.1.0",
     "cbor-x": "1.5.8",
-    "uuid": "^9.0.1",
-    "isomorphic-ws": "^5.0.0"
+    "isomorphic-ws": "^5.0.0",
+    "uuid": "^9.0.1"
   },
   "devDependencies": {
     "@rollup/plugin-commonjs": "^11.0.1",

@@ -10,9 +10,10 @@ export default [
 	// `file` and `format` for each target)
 	{
 		input: ['src/rembus.js'],
-		external: ['cbor-x', 'node:crypto', 'isomorphic-ws', 'uuid'],
+		external: ['cbor-x', 'node:crypto', 'isomorphic-ws', 'uuid', 'apache-arrow'],
 		output: [
-			{ file: pkg.main, format: 'cjs' },
+			//{ file: pkg.main, format: 'cjs' },
+			{ file: 'dist/rembus.js', format: 'cjs' },
 			{ file: pkg.module, format: 'es' }
 		],
 		plugins: [multi()]
