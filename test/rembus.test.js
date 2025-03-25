@@ -49,7 +49,7 @@ test('rpc ok', async () => {
     let rb = rembus.component('myc')
     await rb.connect()
     let response = await rb.rpc('version')
-    expect(response).toBe('0.2.1')
+    expect(response).toBe('0.6.0')
     await rb.close()
 })
 

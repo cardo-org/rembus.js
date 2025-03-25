@@ -99,6 +99,38 @@ export function table2tag(data) {
     return data
 }
 
+function responseSettler(message, completer) {
+    let status = message[2]
+    let data = tag2table(message[3])
+    switch (status) {
+        case stsSuccess:
+            completer.complete(data);
+            break;
+        case stsChallenge:
+            completer.complete(data);
+            break;
+        default:
+            completer.reject(toException(status, data));
+            break;
+    }
+}
+
+function identitySettler(message, completer) {
+    let status = message[2]
+    let data = message[3]
+    switch (status) {
+        case stsSuccess:
+            completer.complete(null);
+            break;
+        case stsChallenge:
+            completer.complete(data);
+            break;
+        default:
+            completer.reject(toException(status, data));
+            break;
+    }
+}
+
 class Component {
     constructor(url = null, secret) {
         if (URL.canParse(url)) {
@@ -133,13 +165,17 @@ class Component {
         this.socket = new WebSocket(this.url);
 
         this.socket.onopen = function open() {
+            console.log("connection open")
         };
 
-        this.socket.onclose = function close(event) {
-            // console.log('connection closed, code:', event.code)
+        this.socket.onclose = function (event) {
+            console.log('connection closed, code:', event.code)
         };
 
-        this.socket.onerror = (event) => this.reason = event.message
+        this.socket.onerror = function (event) {
+            console.log('connection error, code:', event)
+            //this.reason = event.message
+        }
 
         this.socket.onmessage = async (event) => this.handleInput(event);
 
@@ -232,7 +268,7 @@ class Component {
                     var handle = this.reqres[msgid]
                     delete this.reqres[msgid];
                     clearTimeout(handle.timer)
-                    handle.response(payload);
+                    handle.response(payload, handle.completer);
                 }
                 break;
             case TYPE_RPC:
@@ -254,26 +290,12 @@ class Component {
     }
 
 
-    waitForResponse(id) {
+    waitForResponse(id, settler = responseSettler) {
         const completer = new Completer();
-        function responseSettler(message) {
-            let status = message[2]
-            let data = tag2table(message[3])
-            switch (status) {
-                case stsSuccess:
-                    completer.complete(data);
-                    break;
-                case stsChallenge:
-                    completer.complete(data);
-                    break;
-                default:
-                    completer.reject(toException(status, data));
-                    break;
-            }
-        }
 
         this.reqres[id] = {
-            response: responseSettler,
+            completer: completer,
+            response: settler,
             timer: setTimeout(() => completer.reject(new RembusError(stsTimeout, "rembus timeout")), 1000)
         }
         return completer.promise;
@@ -307,8 +329,9 @@ class Component {
     async identity() {
         let msgid = v4();
         let pkt = encode([TYPE_IDENTITY, parse(msgid).buffer, this.cid]);
+
         await this.send(pkt);
-        return this.waitForResponse(msgid);
+        return this.waitForResponse(msgid, identitySettler);
     }
 
     async attestation(challenge) {

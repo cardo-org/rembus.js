@@ -1,12 +1,12 @@
 {
   "name": "rembus",
   "version": "0.1.0",
-  "description": "Rembus client api",
+  "description": "RPC an Pub/Sub with Rembus protocol",
   "main": "dist/rembus.cjs.js",
   "module": "dist/rembus.esm.js",
   "dependencies": {
     "apache-arrow": "^16.1.0",
-    "cbor-x": "1.5.8",
+    "cbor-x": "^1.5.8",
     "isomorphic-ws": "^5.0.0",
     "uuid": "^9.0.1"
   },
