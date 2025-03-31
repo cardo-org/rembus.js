@@ -165,11 +165,11 @@ class Component {
         this.socket = new WebSocket(this.url);
 
         this.socket.onopen = function open() {
-            console.log("connection open")
+            // console.log("connection open")
         };
 
         this.socket.onclose = function (event) {
-            console.log('connection closed, code:', event.code)
+            // console.log('connection closed, code:', event.code)
         };
 
         this.socket.onerror = function (event) {
