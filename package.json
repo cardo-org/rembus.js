@@ -1,6 +1,6 @@
 {
   "name": "rembus",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "RPC an Pub/Sub with Rembus",
   "main": "index.js",
   "type": "module",
