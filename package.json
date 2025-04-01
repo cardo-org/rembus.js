@@ -1,7 +1,7 @@
 {
   "name": "rembus",
   "version": "0.1.0",
-  "description": "RPC an Pub/Sub with Rembus protocol",
+  "description": "RPC an Pub/Sub with Rembus",
   "main": "dist/rembus.cjs.js",
   "module": "dist/rembus.esm.js",
   "dependencies": {
