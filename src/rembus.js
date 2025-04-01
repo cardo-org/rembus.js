@@ -28,9 +28,11 @@ const stsTargetNotFound = 0x2D;
 const stsTargetDown = 0x2E;
 const stsTimeout = 0x46
 
-export function component(url, secret) {
+function component(url, secret) {
     return new Component(url, secret);
 }
+
+export default component;
 
 export class RembusError {
     constructor(status, reason) {
@@ -323,7 +325,7 @@ class Component {
     async publish(topic) {
         const args = Array.prototype.slice.call(arguments, 1);
         let pkt = encode([TYPE_PUBSUB, topic, table2tag(args)]);
-        this.send(pkt);
+        await this.send(pkt);
     }
 
     async identity() {

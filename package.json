@@ -2,8 +2,15 @@
   "name": "rembus",
   "version": "0.1.1",
   "description": "RPC an Pub/Sub with Rembus",
-  "main": "dist/rembus.cjs.js",
-  "module": "dist/rembus.esm.js",
+  "main": "index.js",
+  "type": "module",
+  "exports": {
+    "import": "./index.js"
+  },
+  "files": [
+    "index.js",
+    "src/"
+  ],
   "dependencies": {
     "apache-arrow": "^16.1.0",
     "cbor-x": "^1.5.8",
