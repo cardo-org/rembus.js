@@ -1,6 +1,6 @@
-const arrow = require('apache-arrow');
-const cbor = require('cbor-x');
-const rembus = require('rembus');
+import * as rembus from '../src/rembus.js';
+import * as arrow from 'apache-arrow';
+import * as cbor from 'cbor-x'
 
 const TYPE_RPC = 2
 
@@ -17,10 +17,10 @@ test("encode", () => {
 
     //console.table([...tbl]);
 
-    rb = rembus.component()
-    payload = rb.encoder.encode(rembus.table2tag(tbl))
+    let rb = rembus.component()
+    let payload = rb.encoder.encode(rembus.table2tag(tbl))
 
-    out = rembus.tag2table(cbor.decode(payload))
+    let out = rembus.tag2table(cbor.decode(payload))
     //console.log(out.toArray())
 
     expect(out.toArray()).toStrictEqual(tbl.toArray())

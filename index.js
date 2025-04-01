@@ -1,1 +1,1 @@
-export { default } from "./src/rembus.js";
+export { component } from "./src/rembus.js";

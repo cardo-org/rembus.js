@@ -28,11 +28,11 @@ const stsTargetNotFound = 0x2D;
 const stsTargetDown = 0x2E;
 const stsTimeout = 0x46
 
-function component(url, secret) {
+export function component(url, secret) {
     return new Component(url, secret);
 }
 
-export default component;
+// export default component;
 
 export class RembusError {
     constructor(status, reason) {
@@ -164,6 +164,7 @@ class Component {
     }
 
     async connect() {
+        console.log("connect ...")
         this.socket = new WebSocket(this.url);
 
         this.socket.onopen = function open() {
@@ -184,7 +185,7 @@ class Component {
         let isconn = await this.isconnected();
 
         if (isconn) {
-
+            console.log("connect isconn")
             if (this.cid !== null) {
                 let challenge = await this.identity()
                 if (challenge !== null) {
@@ -304,7 +305,7 @@ class Component {
     }
 
     async send(pkt) {
-        //console.log('output>>:', arrayToHex(pkt));
+        console.log('output>>:', arrayToHex(pkt));
         if (!this.isOpened())
             await this.connect();
         this.socket.send(pkt)
@@ -331,7 +332,7 @@ class Component {
     async identity() {
         let msgid = v4();
         let pkt = encode([TYPE_IDENTITY, parse(msgid).buffer, this.cid]);
-
+        console.log("identity:", pkt)
         await this.send(pkt);
         return this.waitForResponse(msgid, identitySettler);
     }
@@ -358,6 +359,7 @@ class Component {
     }
 
     async reactive() {
+        console.log('reactive')
         return this.setreactive(true)
     }
 
@@ -368,6 +370,7 @@ class Component {
     async subscribe(fn) {
         let msgid = v4();
         let pkt = encode([TYPE_SETTING, parse(msgid).buffer, fn.name, { cmd: 'subscribe' }]);
+        console.log(`subscribe ${fn.name}`)
         await this.send(pkt);
         await this.waitForResponse(msgid);
         this.handlers.set(fn.name, fn)

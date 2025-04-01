@@ -1,4 +1,4 @@
-const rembus = require('rembus');
+import * as rembus from '../src/rembus.js';
 
 function foo(x, y) {
     return x + y;
