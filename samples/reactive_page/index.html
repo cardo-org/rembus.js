@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Rembus Example</title>
+  <script src="dist/rembus.umd.js"></script>
+</head>
+<body>
+  <h1>Rembus</h1>
+  <p id="message"></p>
+
+  <script>
+
+    function greeting(data) {
+        document.getElementById('message').textContent = data;
+    }
+
+    async function main() {
+        const rb = Rembus.component("wss://127.0.0.1:8000/browser");
+        await rb.subscribe(greeting);
+        await rb.reactive()
+    }
+
+    main();
+  </script>
+</body>
+</html>

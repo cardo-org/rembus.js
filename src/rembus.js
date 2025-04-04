@@ -4,7 +4,7 @@ import WebSocket from 'isomorphic-ws';
 import { tableFromIPC, tableToIPC, Table } from 'apache-arrow';
 import { constants } from 'buffer';
 
-const isBrowser = typeof window !== "undefined" && typeof window.document !== "undefined";
+export const isBrowser = typeof window !== "undefined" && typeof window.document !== "undefined";
 
 if (!isBrowser) {
     const crypto = globalThis.crypto
@@ -33,6 +33,36 @@ const stsTimeout = 0x46
 
 export function component(url, secret) {
     return new Component(url, secret);
+}
+
+export async function generateKeyPair() {
+    const { publicKey, privateKey } = await crypto.subtle.generateKey(
+        {
+            name: "RSASSA-PKCS1-v1_5",
+            modulusLength: 2048,
+            publicExponent: new Uint8Array([1, 0, 1]),
+            hash: "SHA-256",
+        },
+        true, // Can extract keys
+        ["sign", "verify"]
+    );
+
+    const publicKeySpki = await crypto.subtle.exportKey("spki", publicKey);
+    const privateKeySpki = await crypto.subtle.exportKey("pkcs8", privateKey);
+
+    return {
+        publicKey: derToPem(publicKeySpki, "PUBLIC KEY"),
+        privateKey: derToPem(privateKeySpki, "PRIVATE KEY")
+    }
+}
+
+
+export function testfunc() {
+    if (isBrowser) {
+        console.log('BINGO');
+    } else {
+        console.log('ORCO');
+    }
 }
 
 // export default component;
@@ -67,26 +97,6 @@ function arrayToHex(byteArray) {
     }).join(',')
 }
 
-async function generateKeyPair() {
-    const { publicKey, privateKey } = await crypto.subtle.generateKey(
-        {
-            name: "RSASSA-PKCS1-v1_5",
-            modulusLength: 2048,
-            publicExponent: new Uint8Array([1, 0, 1]),
-            hash: "SHA-256",
-        },
-        true, // Can extract keys
-        ["sign", "verify"]
-    );
-
-    const publicKeySpki = await crypto.subtle.exportKey("spki", publicKey);
-    const privateKeySpki = await crypto.subtle.exportKey("pkcs8", privateKey);
-
-    return {
-        publicKey: derToPem(publicKeySpki, "PUBLIC KEY"),
-        privateKey: derToPem(privateKeySpki, "PRIVATE KEY")
-    }
-}
 
 async function signMessage(privateKey, message) {
     const encoder = new TextEncoder();
@@ -116,17 +126,25 @@ async function verifySignature(publicKey, signature, message) {
     );
 }
 
-export async function saveKeys(cid) {
-    const { publicKey, privateKey } = await generateKeyPair();
+export async function saveKeys(cid, privateKey) {
+    //const { publicKey, privateKey } = await generateKeyPair();
 
     if (isBrowser) {
-        await saveKeysToIndexedDB(cid, publicKey, privateKey);
+        await PKToIndexedDB(cid, privateKey);
     } else {
-        await saveKeysToFile(cid, publicKey, privateKey);
+        await PKToFile(cid, privateKey);
     }
 }
 
-async function saveKeysToIndexedDB(cid, publicKey, privateKey) {
+export async function getPK(cid) {
+    if (isBrowser) {
+        return await PKFromIndexedDB(cid);
+    } else {
+        return await PKFromFile(cid);
+    }
+}
+
+async function PKToIndexedDB(cid, privateKey) {
     const dbRequest = indexedDB.open(cid, 1);
     dbRequest.onupgradeneeded = (event) => {
         const db = event.target.result;
@@ -139,11 +157,7 @@ async function saveKeysToIndexedDB(cid, publicKey, privateKey) {
             const tx = db.transaction("keys", "readwrite");
             const store = tx.objectStore("keys");
 
-            const publicKeyJwk = await crypto.subtle.exportKey("jwk", publicKey);
-            const privateKeyJwk = await crypto.subtle.exportKey("jwk", privateKey);
-
-            store.put({ type: "publicKey", key: publicKeyJwk });
-            store.put({ type: "privateKey", key: privateKeyJwk });
+            store.put({ type: "privateKey", key: privateKey });
 
             tx.oncomplete = resolve;
             tx.onerror = reject;
@@ -153,14 +167,65 @@ async function saveKeysToIndexedDB(cid, publicKey, privateKey) {
     });
 }
 
+async function PKFromIndexedDB(cid) {
+    return new Promise((resolve, reject) => {
+        const dbRequest = indexedDB.open(cid, 1);
+
+        dbRequest.onupgradeneeded = (event) => {
+            const db = event.target.result;
+            if (!db.objectStoreNames.contains("keys")) {
+                db.createObjectStore("keys", { keyPath: "type" });
+            }
+        };
+
+        dbRequest.onsuccess = (event) => {
+            const db = event.target.result;
+            const tx = db.transaction("keys", "readonly");
+            const store = tx.objectStore("keys");
+
+            // Get the private key by the type "privateKey"
+            const getRequest = store.get("privateKey");
+
+            getRequest.onsuccess = (event) => {
+                const result = event.target.result;
+                if (result) {
+                    resolve(result.key);  // The 'key' field is where the private key is stored
+                } else {
+                    reject(new Error("Private key not found in IndexedDB"));
+                }
+            };
+
+            getRequest.onerror = (error) => {
+                reject(error);
+            };
+        };
+
+        dbRequest.onerror = (error) => {
+            reject(error);
+        };
+    });
+}
+
+function toBase64(buffer) {
+    if (isBrowser) {
+        return new Uint8Array(buffer).toBase64();
+    } else {
+        return Buffer.from(buffer).toString("base64");
+    }
+}
+
 function derToPem(derBuffer, label) {
-    const base64String = Buffer.from(derBuffer).toString("base64");
+    //const base64String = Buffer.from(derBuffer).toString("base64");
+    const base64String = toBase64(derBuffer);
     const formatted = base64String.match(/.{1,64}/g).join("\n");
     const pem = `-----BEGIN ${label}-----\n${formatted}\n-----END ${label}-----\n`;
     return new TextEncoder().encode(pem).buffer;
+    //return new TextEncoder().encode(pem);
 }
 
-function pemToDer(pem) {
+function pemToDer(value) {
+    const pem = new TextDecoder().decode(value);
+    console.log('pem:', pem)
     const matches = pem.match(/-----BEGIN PRIVATE KEY-----([\s\S]+?)-----END PRIVATE KEY-----/);
     if (!matches) {
         throw new Error("Invalid PEM format");
@@ -179,10 +244,18 @@ async function importPrivateKey(privateKeyPem) {
     // Remove the PEM headers and footers
     const privateKeyDer = pemToDer(privateKeyPem);
 
+    console.log("crypto.subtle.importKey exists:", typeof crypto.subtle.importKey === "function");
+    console.log('privateKeyDer type:', Object.prototype.toString.call(privateKeyDer));
+    console.log('privateKeyDer byteLength:', privateKeyDer.byteLength);
+
+    let first = new Uint8Array(privateKeyDer).slice(0, 20)
+    console.log('privateKeyDer (first 20 bytes):', arrayToHex(first));
+
+    console.log('privateKeyDer is ArrayBuffer:', privateKeyDer instanceof ArrayBuffer)
     // Import the private key to a CryptoKey
     const key = await crypto.subtle.importKey(
         "pkcs8",  // This is the type for private keys in PEM format
-        privateKeyDer,
+        privateKeyDer instanceof ArrayBuffer ? privateKeyDer : privateKeyDer.buffer,
         { name: "RSASSA-PKCS1-v1_5", hash: { name: "SHA-256" } },
         false,  // The key cannot be exported
         ["sign"] // This key is intended for signing
@@ -191,7 +264,7 @@ async function importPrivateKey(privateKeyPem) {
     return key;
 }
 
-async function saveKeysToFile(cid, publicKey, privateKey) {
+async function PKToFile(cid, privateKey) {
     const { join } = await import("path");
     const { mkdir, writeFile } = await import("fs/promises");
 
@@ -220,16 +293,17 @@ export async function privateKeyFile(cid) {
     return join(keyDir, ".secret")
 }
 
-async function savePrivateKey(cid, privateKey) {
-    const { writeFile } = await import("fs/promises");
-    const keyFile = await privateKeyFile(cid)
-    await writeFile(keyFile, Buffer.from(privateKey))
-}
+//async function PKToFile(cid, privateKey) {
+//    const { writeFile } = await import("fs/promises");
+//    const keyFile = await privateKeyFile(cid)
+//    await writeFile(keyFile, Buffer.from(privateKey))
+//}
 
-async function loadPrivateKey(cid) {
+async function PKFromFile(cid) {
     const { readFile } = await import("fs/promises");
     const keyFile = await privateKeyFile(cid);
-    const privateKeyPem = await readFile(keyFile, 'utf8');
+    //const privateKeyPem = await readFile(keyFile, 'utf8');
+    const privateKeyPem = await readFile(keyFile);
     return privateKeyPem;
 }
 
@@ -243,7 +317,8 @@ async function sign(cid, challenge) {
     const encoder = new TextEncoder();
     const arr = new Uint8Array(challenge)
     const plain = encode([arr.buffer, cid])
-    const privateKeyPem = await loadPrivateKey(cid);
+    const privateKeyPem = await getPK(cid);
+    console.log('privateKeyPEM:', privateKeyPem)
     const key = await importPrivateKey(privateKeyPem);
     const signature = await crypto.subtle.sign(
         { name: "RSASSA-PKCS1-v1_5" },
@@ -424,15 +499,27 @@ class Component {
     }
 
     async handleInput(evt) {
+        let buffer;
+        //        if (evt.data.arrayBuffer) {
+        //            buffer = await evt.data.arrayBuffer(); // Browser WebSocket
+        //        } else if (evt.data instanceof Buffer) {
+        //            buffer = evt.data; // Node.js WebSocket returns Buffer
+        //        } else if (typeof evt.data === "string") {
+        //            buffer = Buffer.from(evt.data); // Convert string to Buffer
+        //        } else {
+        //            throw new Error("Unsupported WebSocket data type");
+        //        }
+        //        let payload = decode(buffer);
         if (isBrowser) {
             var buff = await evt.data.arrayBuffer();
             var bufView = new Uint8Array(buff);
         } else {
             var bufView = new Uint8Array(evt.data);
         }
+
         //console.log('input<<:', arrayToHex(bufView));
         let payload = decode(bufView)
-        //console.log('rembus msg: ', payload);
+        console.log('rembus msg: ', payload);
         let topic
         switch (payload[0]) {
             case TYPE_PUBSUB:
@@ -531,7 +618,6 @@ class Component {
     async register(cid, pin, tenant) {
         // Generate the keys.
         const { publicKey, privateKey } = await generateKeyPair();
-
         if (pin.length !== 8) {
             throw new Error("pin must be exactly 8 characters long");
         }
@@ -543,18 +629,23 @@ class Component {
 
         // Broker provisioning.
         let msgid = parse(v4()).buffer
+        //let msgid = new Int8Array(16).buffer
 
         const msgidView = new Uint8Array(msgid);
         const pinView = new Uint8Array(pinArray);
         msgidView.set(pinView, 0);
 
+        const pubKey = new Uint8Array(publicKey);
+        //const pubKey = publicKey;
+        //const pubKey = new Uint8Array(451);
+        //console.log(pubKey)
         const pkt = encode(
-            [TYPE_REGISTER, msgid, cid, tenant, publicKey, 1]
+            [TYPE_REGISTER, msgid, cid, tenant, pubKey, 1]
         );
-
+        console.log(pkt)
         await this.send(pkt);
         const response = await this.waitForResponse(stringify(msgidView));
-        await savePrivateKey(cid, privateKey)
+        await saveKeys(cid, Buffer.from(privateKey))
     }
 
     async unregister() {
